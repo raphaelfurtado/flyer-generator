@@ -212,6 +212,11 @@ app.post('/upload', upload.fields([
     }
 });
 
+// Rota para a página inicial
+app.get('/', (req, res) => {
+    res.sendFile(__dirname + '/public/index.html');
+});
+
 // Servir arquivos estáticos
 app.use(express.static('public'));
 
