@@ -49,3 +49,4 @@ yarn-error.log*
 
 # Arquivos específicos do projeto (adicione conforme necessário)
 # exemplo: /config/secrets.js
+.vercel
