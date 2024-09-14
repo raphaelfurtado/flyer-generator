@@ -74,7 +74,7 @@
 </head>
 <body>
   <h1>Gerador de Flyer</h1>
-  <form action="/upload" method="post" enctype="multipart/form-data">
+  <form id="flyerForm" enctype="multipart/form-data">
     <div class="form-group">
       <label for="mainImage">Imagem Principal:</label>
       <input type="file" id="mainImage" name="mainImage" accept="image/*" required />
@@ -123,5 +123,8 @@
     </div>
     <button type="submit">Gerar Flyer</button>
   </form>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/browser-image-compression/2.0.0/browser-image-compression.js"></script>
+  <script src="/js/compress.js"></script>
 </body>
 </html>
