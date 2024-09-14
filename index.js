@@ -4,7 +4,8 @@ const sharp = require('sharp');
 const express = require('express');
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
 // Adicione esta linha para processar dados do formulário
 app.use(express.urlencoded({ extended: true }));
@@ -35,9 +36,11 @@ const createTextImage = async (text, width, height, rotation = 0, font, fontSize
 };
 
 const fitTextToBox = (text, width, height, fontSize) => {
-    const maxChars = Math.floor(width / (fontSize * 0.6)); // Estimativa de caracteres por linha
-    const maxLines = Math.floor(height / (fontSize * 1.2)); // Estimativa de linhas que cabem na altura
-    const words = text.split(' ');
+    if (!text) return ''; // Retorna uma string vazia se o texto for undefined ou null
+    
+    const maxChars = Math.floor(width / (fontSize * 0.6));
+    const maxLines = Math.floor(height / (fontSize * 1.2));
+    const words = text.toString().split(' '); // Converte para string antes de usar split
     let lines = [];
     let currentLine = '';
 
@@ -51,7 +54,6 @@ const fitTextToBox = (text, width, height, fontSize) => {
     }
     lines.push(currentLine);
 
-    // Ajusta o tamanho da fonte se houver muitas linhas
     if (lines.length > maxLines) {
         const scaleFactor = maxLines / lines.length;
         fontSize = Math.floor(fontSize * scaleFactor);
@@ -70,8 +72,8 @@ app.post('/upload', upload.fields([
 ]), async (req, res) => {
     const mainImage = req.files['mainImage'] ? req.files['mainImage'][0] : null;
     const topImage = req.files['topImage'] ? req.files['topImage'][0] : null;
-    const bottomText = req.body.bottomText;
-    const additionalText = req.body.additionalText;
+    const bottomText = req.body.bottomText || '';
+    const additionalText = req.body.additionalText || '';
     const leftText = req.body.leftText || '';
     const leftBottomText = req.body.leftBottomText || '';
     const rightTopText = req.body.rightTopText || '';
@@ -86,12 +88,11 @@ app.post('/upload', upload.fields([
             throw new Error('Ambas as imagens são necessárias.');
         }
 
-        // Verificar se o template existe
-        try {
-            await fs.access(flyerTemplate);
-        } catch (error) {
-            throw new Error('Template do flyer não encontrado.');
-        }
+        console.log('Informações da imagem principal:', {
+            originalname: mainImage.originalname,
+            mimetype: mainImage.mimetype,
+            size: mainImage.size
+        });
 
         // Obter as dimensões do template
         const templateMetadata = await sharp(flyerTemplate).metadata();
@@ -105,30 +106,50 @@ app.post('/upload', upload.fields([
         const textStartY = mainImageTop + mainImageHeight;
         const sideTextWidth = Math.floor(templateWidth * 0.15); // 15% da largura
 
-        // Processar a imagem do topo
-        const topImageBuffer = await sharp(topImage.path)
-            .resize({
-                width: Math.floor(templateWidth),
-                height: topImageHeight,
-                fit: 'contain',
-                background: { r: 255, g: 255, b: 255, alpha: 0 }
-            })
-            .toBuffer();
-
         // Processar a imagem principal do usuário
-        const mainImageMetadata = await sharp(mainImage.path).metadata();
+        const mainImageMetadata = await sharp(mainImage.buffer).metadata();
         const mainImageAspectRatio = mainImageMetadata.width / mainImageMetadata.height;
         const mainImageWidth = Math.floor(Math.min(templateWidth - 2 * sideTextWidth, mainImageHeight * mainImageAspectRatio));
         const mainImageLeft = Math.floor(sideTextWidth + (templateWidth - 2 * sideTextWidth - mainImageWidth) / 2);
 
-        const mainImageBuffer = await sharp(mainImage.path)
-            .resize({
-                width: mainImageWidth,
-                height: mainImageHeight,
-                fit: 'contain',
-                background: { r: 255, g: 255, b: 255, alpha: 0 }
-            })
-            .toBuffer();
+        console.log('Processando imagem principal...');
+        let mainImageBuffer;
+        try {
+            mainImageBuffer = await sharp(mainImage.buffer)
+                .resize({
+                    width: mainImageWidth,
+                    height: mainImageHeight,
+                    fit: 'contain',
+                    background: { r: 255, g: 255, b: 255, alpha: 0 }
+                })
+                .toBuffer();
+        } catch (error) {
+            console.error('Erro detalhado ao processar imagem principal:', error);
+            throw new Error('Erro ao processar imagem principal: ' + error.message);
+        }
+
+        console.log('Processando imagem do topo...');
+        let topImageBuffer;
+        try {
+            topImageBuffer = await sharp(topImage.buffer)
+                .resize({
+                    width: Math.floor(templateWidth),
+                    height: topImageHeight,
+                    fit: 'contain',
+                    background: { r: 255, g: 255, b: 255, alpha: 0 }
+                })
+                .toBuffer();
+        } catch (error) {
+            console.error('Erro ao processar imagem do topo:', error);
+            throw new Error('Erro ao processar imagem do topo');
+        }
+
+        // Verificar se o template existe
+        try {
+            await fs.access(flyerTemplate);
+        } catch (error) {
+            throw new Error('Template do flyer não encontrado.');
+        }
 
         // Definir tamanhos fixos para as caixas de texto
         const bottomTextSize = { width: Math.floor(templateWidth - 2 * sideTextWidth), height: Math.floor(templateHeight * 0.1) };
@@ -137,7 +158,7 @@ app.post('/upload', upload.fields([
 
         // Criar imagens de texto com tamanhos predefinidos
         const bottomTextImage = await createTextImage(bottomText, bottomTextSize.width, bottomTextSize.height, 0, fontType, 32);
-        const additionalTextImage = await createTextImage(additionalText, bottomTextSize.width, bottomTextSize.height, 0, fontType, 28, true);
+        const additionalTextImage = await createTextImage(additionalText, bottomTextSize.width, bottomTextSize.height, 0, fontType, 32, true);
         const leftTextImage = await createTextImage(leftText, leftTextSize.width, leftTextSize.height, 0, fontType, 20);
         const leftBottomTextImage = await createTextImage(leftBottomText, sideTextSize.width, sideTextSize.height, 0, fontType, 20);
         const rightTopTextImage = await createTextImage(rightTopText, sideTextSize.width, sideTextSize.height, 0, fontType, 20);
@@ -186,7 +207,7 @@ app.post('/upload', upload.fields([
             }
         });
     } catch (error) {
-        console.error('Erro durante o processamento:', error);
+        console.error('Erro detalhado:', error);
         res.status(500).send('Erro ao gerar o flyer: ' + error.message);
     }
 });
